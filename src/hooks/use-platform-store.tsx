@@ -2351,7 +2351,10 @@ export function PlatformStoreProvider({ children }: { children: ReactNode }) {
   async function opsCreateBooking(input: { studentId: string; teacherId: string; startsAt: string; endsAt?: string; meetingUrl?: string; notes?: string }) {
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     await apiFetch("/api/ops/bookings", { method: "POST", body: { ...input, timeZone } });
-    await Promise.all([fetchOpsBookings(), fetchCallsStudents()]);
+    // A successful booking must not be reported as failed just because one of
+    // the follow-up list refreshes fails. Keep those refresh failures separate
+    // from the booking POST response.
+    await Promise.allSettled([fetchOpsBookings(), fetchCallsStudents()]);
   }
 
   // ─── Free lectures management (admin/support) ───
