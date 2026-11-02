@@ -9260,6 +9260,8 @@ function OpsCreateSessionCard({
   const [availabilityTeacherId, setAvailabilityTeacherId] = useState("");
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [availabilityError, setAvailabilityError] = useState("");
+  const [callsStudentsLoading, setCallsStudentsLoading] = useState(false);
+  const [callsStudentsError, setCallsStudentsError] = useState("");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
   const [meetingUrl, setMeetingUrl] = useState("");
@@ -9275,8 +9277,21 @@ function OpsCreateSessionCard({
   });
 
   useEffect(() => {
-    if (open) onFetchCallsStudents().catch(() => {});
+    if (!open) return;
+    setCallsStudentsLoading(true);
+    setCallsStudentsError("");
+    onFetchCallsStudents()
+      .catch(() => setCallsStudentsError("تعذر تحميل الطلاب المؤهلين. تحقق من اتصال الخادم ثم أعد المحاولة."))
+      .finally(() => setCallsStudentsLoading(false));
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function refreshCallsStudents() {
+    setCallsStudentsLoading(true);
+    setCallsStudentsError("");
+    onFetchCallsStudents()
+      .catch(() => setCallsStudentsError("تعذر تحميل الطلاب المؤهلين. تحقق من اتصال الخادم ثم أعد المحاولة."))
+      .finally(() => setCallsStudentsLoading(false));
+  }
 
   useEffect(() => {
     let current = true;
@@ -9337,7 +9352,12 @@ function OpsCreateSessionCard({
       setOk("تم إنشاء الحصة وخصمها من رصيد الطالب");
       setStartsAt(""); setEndsAt(""); setMeetingUrl(""); setNotes(""); setStudentId(""); setSelectedAvailabilityId("");
     } catch (e2) {
-      setErr(e2 instanceof Error ? e2.message : "فشل إنشاء الحصة");
+      const message = e2 instanceof Error ? e2.message : "";
+      setErr(
+        /internal server error|http 5\d\d/i.test(message)
+          ? "تعذر تأكيد إنشاء الحصة بسبب مشكلة في الخادم. راجع قائمة الحجوزات قبل إعادة المحاولة لتجنب إنشاء حجز مكرر."
+          : message || "تعذر إنشاء الحصة. تحقق من البيانات وحاول مرة أخرى.",
+      );
     } finally {
       setSaving(false);
     }
@@ -9366,14 +9386,24 @@ function OpsCreateSessionCard({
             </div>
             <div className="space-y-1.5">
               <Label>الطالب (باقة مكالمات برصيد متبقٍ)</Label>
-              <select value={studentId} onChange={(e) => setStudentId(e.target.value)} required className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+              <select value={studentId} onChange={(e) => setStudentId(e.target.value)} required disabled={callsStudentsLoading || callsStudents.length === 0} className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-60">
                 <option value="">— اختر الطالب —</option>
                 {callsStudents.map((s) => (
                   <option key={s.id} value={s.studentId}>
-                    {s.studentName} — {s.packageName} (متبقي {s.sessionsRemaining ?? "—"})
+                    {s.studentName}{s.studentPhone ? ` · ${s.studentPhone}` : ""} — {s.packageName} (متبقي {s.sessionsRemaining ?? "—"})
                   </option>
                 ))}
               </select>
+              {callsStudentsLoading && <p className="text-xs text-muted-foreground">جاري تحميل الطلاب أصحاب باقات المكالمات...</p>}
+              {!callsStudentsLoading && callsStudentsError && (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-danger" role="alert">
+                  <span>{callsStudentsError}</span>
+                  <Button type="button" variant="secondary" className="text-xs" onClick={refreshCallsStudents}>إعادة المحاولة</Button>
+                </div>
+              )}
+              {!callsStudentsLoading && !callsStudentsError && callsStudents.length === 0 && (
+                <p className="text-xs text-muted-foreground">لا يوجد حالياً طلاب لديهم رصيد مكالمات متاح.</p>
+              )}
             </div>
             {teacherId && availabilityLoading && <p className="text-xs text-muted-foreground sm:col-span-2">جاري تحميل أوقات هذا المدرس...</p>}
             {teacherId && !availabilityLoading && selectableAvailability.length > 0 && (
@@ -9415,7 +9445,7 @@ function OpsCreateSessionCard({
               <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
           </div>
-          {err && <p className="text-sm font-semibold text-danger">{err}</p>}
+          {err && <p role="alert" className="text-sm font-semibold text-danger">{err}</p>}
           {ok && <p className="text-sm font-semibold text-[#2f9e4f]">{ok}</p>}
           <Button type="submit" disabled={saving || availabilityLoading || availabilityTeacherId !== teacherId || !selectedAvailabilityId}>{saving ? "جاري الإنشاء..." : "إنشاء الحصة"}</Button>
         </form>
